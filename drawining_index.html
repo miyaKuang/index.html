@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PTCL-Style Graph Builder</title>
+<title>Interactive Graph Builder</title>
 <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.6/css/pico.min.css">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
@@ -23,7 +23,7 @@
 </head>
 <body>
 <main class="container">
-  <h2>PTCL-Style Interactive Graph Builder</h2>
+  <h2>Interactive Graph Builder</h2>
 
   <div class="grid">
     <!-- Controls -->
@@ -36,16 +36,16 @@
         </select>
 
         <label class="mt-2">Title</label>
-        <input id="titleInput" value="PTCL-ALL average annual age-adjusted incidence by Race/Ethnicity (both sexes), grouped by subtype" />
+        <input id="titleInput" value="Average value by subgroup, grouped by category" />
 
         <div class="row">
           <div>
-            <label># Big groups (subtypes)</label>
-            <input id="nBig" type="number" min="1" max="10" value="4"/>
+            <label># Big groups</label>
+            <input id="nBig" type="number" min="1" max="10" value="3"/>
           </div>
           <div>
-            <label>Forest x-tick step</label>
-            <input id="xtick" type="number" step="0.05" value="0.5"/>
+            <label>Forest: y-tick step</label>
+            <input id="ytick" type="number" step="0.05" value="0.5"/>
           </div>
         </div>
 
@@ -61,13 +61,11 @@
 
         <details>
           <summary>Appearance</summary>
-          <label>Y label (Bar)</label>
-          <input id="yLabelBar" value="Average annual age-adjusted incidence rate (per 100,000)"/>
-          <label>X label (Forest)</label>
-          <input id="xLabelForest" value="Rate Ratio (Reference = White Non-Hispanic)"/>
+          <label>Y label</label>
+          <input id="yLabel" value="Y value (units)"/>
           <div class="row">
             <label><input type="checkbox" id="showGrid" checked/> Show grid</label>
-            <label><input type="checkbox" id="refLine" checked/> Forest: show x=1 reference</label>
+            <label><input type="checkbox" id="refLine" checked/> Forest: show y=1 reference</label>
           </div>
           <div class="row">
             <label><input type="checkbox" id="blackCI" checked/> CI in black</label>
@@ -82,8 +80,8 @@
         </details>
 
         <label>Chat tweaks</label>
-        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | xtick=0.25" />
-        <small>Press Enter to apply. Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>xtick</code>=0.5</small>
+        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | ytick=0.25" />
+        <small>Press Enter to apply. Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>ytick</code>=0.5</small>
 
         <hr/>
         <button id="randomize" class="secondary">Randomize Demo Data</button>
@@ -98,10 +96,9 @@
     <section>
       <article>
         <h5>Data</h5>
-        <p class="mt-0">Edit cells directly. For Bar charts, use columns:
-          <code>BigGroup, Subgroup, Rate, LowerCI, UpperCI</code>.
-          For Dot/Forest charts:
-          <code>BigGroup, Subgroup, RateRatio, LowerCI, UpperCI, PValue</code>.
+        <p class="mt-0">Edit cells directly. Columns for both chart types use a single metric column named <code>Y</code>.
+          <br><strong>Bar:</strong> <code>BigGroup, Subgroup, Y, LowerCI (optional), UpperCI (optional)</code>
+          <br><strong>Dot/Forest:</strong> <code>BigGroup, Subgroup, Y, LowerCI (optional), UpperCI (optional), PValue (optional)</code>
         </p>
         <div style="overflow:auto;max-height:520px">
           <table id="dataTable" class="striped"></table>
@@ -114,60 +111,29 @@
   </div>
 
   <footer>
-    <details>
-      <summary><strong>How to publish this page</strong></summary>
-      <ol>
-        <li><strong>GitHub Pages</strong>
-          <ol>
-            <li>Create a repo (e.g., <em>ptcl-graph</em>).</li>
-            <li>Add this file as <code>index.html</code> and commit.</li>
-            <li>In repo Settings → Pages → Source: <em>Deploy from a branch</em>, Branch: <em>main</em>, Folder: <em>/(root)</em>.</li>
-            <li>Wait a minute; your site will be at <code>https://&lt;username&gt;.github.io/ptcl-graph/</code>.</li>
-          </ol>
-        </li>
-        <li><strong>Netlify</strong>
-          <ol>
-            <li>Go to netlify.com → “New site from Git”.</li>
-            <li>Connect your GitHub repo; build command: <em>none</em>, publish directory: <code>/</code>.</li>
-            <li>Deploy; you’ll get a live URL (you can set a custom domain too).</li>
-          </ol>
-        </li>
-        <li><strong>Vercel</strong>
-          <ol>
-            <li>vercel.com → “Add New Project” → Import your repo.</li>
-            <li>No build step needed; output dir: <code>/</code>.</li>
-            <li>Deploy; instant global CDN URL.</li>
-          </ol>
-        </li>
-        <li><strong>Direct</strong>: double-click <code>index.html</code> to open locally or host it on any static server (S3/Cloudflare Pages/etc.).</li>
-      </ol>
-    </details>
+    <small>Single-file demo. Edit data, tweak with chat, and export PNG.</small>
   </footer>
 </main>
 
 <script>
 /* ---------- Defaults & palette ---------- */
-const DEFAULT_SECOND = ["Chinese","Japanese","Filipino","Korean","Vietnamese",
-                        "Asian Indian, Pakistani","Hawaiian, Samoan","American Indian"];
+const DEFAULT_SECOND = [
+  "Apple","Banana","Cherry","Grape","Orange",
+  "Carrot","Broccoli","Spinach","Tomato","Potato"
+];
 const PALETTE = {
-  "Chinese": "#1f77b4",
-  "Japanese": "#ff7f0e",
-  "Filipino": "#2ca02c",
-  "Korean": "#d62728",
-  "Vietnamese": "#9467bd",
-  "Asian Indian, Pakistani": "#8c564b",
-  "Hawaiian, Samoan": "#e377c2",
-  "American Indian": "#ff7f00"
+  "Apple":"#1f77b4","Banana":"#ff7f0e","Cherry":"#2ca02c","Grape":"#d62728","Orange":"#9467bd",
+  "Carrot":"#8c564b","Broccoli":"#e377c2","Spinach":"#17becf","Tomato":"#bcbd22","Potato":"#7f7f7f"
 };
 let state = {
   chartType: "Bar (incidence)",
   title: document.querySelector("#titleInput").value,
   nBig: +document.querySelector("#nBig").value,
-  bigGroups: ["PTCL-NOS (9702)","AITL (9705)","ALCL (9714)","PTCL-ALL"].slice(0, +document.querySelector("#nBig").value),
-  subgroups: [...DEFAULT_SECOND.slice(0,5)],
+  bigGroups: ["Category A","Category B","Category C"].slice(0, +document.querySelector("#nBig").value),
+  subgroups: [...DEFAULT_SECOND.slice(0,6)],
   showGrid: true,
   refLine: true,
-  xtick: 0.5,
+  ytick: 0.5,
   blackCI: true,
   bracketPos: "Top of groups",
   data: []
@@ -199,8 +165,7 @@ function buildSubgroupChips(){
         state.subgroups.push(label);
         chip.classList.add("active");
       }
-      makeRandomData(); renderTable();
-      draw();
+      makeRandomData(); renderTable(); draw();
     };
     box.appendChild(chip);
   });
@@ -222,17 +187,14 @@ function makeRandomData(){
   const rows = [];
   state.bigGroups.forEach(bg=>{
     state.subgroups.forEach(sg=>{
+      const Y = +(rand(0.2, 2.0)).toFixed(3);
+      const lo = Math.random()<0.7 ? +(Math.max(0.01, Y - rand(0.05, 0.4))).toFixed(3) : "";
+      const hi = Math.random()<0.7 ? +(Y + rand(0.05, 0.4)).toFixed(3) : "";
+      const p  = Math.random()<0.4 ? +(rand(0, 0.2)).toFixed(4) : "";
       if(type==="Bar (incidence)"){
-        const rate = +(rand(0.12,1.15)).toFixed(3);
-        const lo = +(Math.max(0.01,rate-rand(0.02,0.18))).toFixed(3);
-        const hi = +(rate+rand(0.02,0.18)).toFixed(3);
-        rows.push({BigGroup:bg,Subgroup:sg,Rate:rate,LowerCI:lo,UpperCI:hi});
-      }else{
-        const rr = +(rand(0.6,2.2)).toFixed(3);
-        const lo = +(Math.max(0.1,rr-rand(0.1,0.45))).toFixed(3);
-        const hi = +(rr+rand(0.1,0.45)).toFixed(3);
-        const p  = +(rand(0,0.2)).toFixed(4);
-        rows.push({BigGroup:bg,Subgroup:sg,RateRatio:rr,LowerCI:lo,UpperCI:hi,PValue:p});
+        rows.push({BigGroup:bg, Subgroup:sg, Y, LowerCI:lo, UpperCI:hi});
+      } else {
+        rows.push({BigGroup:bg, Subgroup:sg, Y, LowerCI:lo, UpperCI:hi, PValue:p});
       }
     });
   });
@@ -256,7 +218,7 @@ function renderTable(){
       const td = document.createElement("td");
       const inp = document.createElement("input");
       inp.value = row[k];
-      inp.onchange = ()=>{ state.data[ridx][k] = (k==="BigGroup"||k==="Subgroup") ? inp.value : +inp.value; };
+      inp.onchange = ()=>{ state.data[ridx][k] = (k==="BigGroup"||k==="Subgroup") ? inp.value : (inp.value===""? "": +inp.value); };
       td.appendChild(inp);
       tr.appendChild(td);
     });
@@ -275,130 +237,126 @@ function draw(){
   const showGrid = document.querySelector("#showGrid").checked;
 
   if(type==="Bar (incidence)"){
-    // Build traces per subgroup within each big group (grouped categories on x)
-    const x = [], y = [], err = [], color = [], bigIndex = [], subIndex = [];
+    // Categories on x; Y on y; CI vertical and optional
+    const traces = [];
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
-
-    // Keep order: iterate bg then sg
+    const x = [], y = [], errUp=[], errDown=[], colors=[];
     orderBG.forEach(bg=>{
       orderSG.forEach(sg=>{
         const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
         if(!row) return;
         x.push(`${bg} • ${sg}`);
-        y.push(row.Rate);
-        err.push({type:"data", array:[row.UpperCI-row.Rate], arrayminus:[row.Rate-row.LowerCI], visible:true,
-                  color: blackCI? "#000":"auto", thickness:1.5, width:4});
-        color.push(PALETTE[sg]||"#4d4d4d");
-        bigIndex.push(bg); subIndex.push(sg);
+        y.push(+row.Y);
+        const up = row.UpperCI==="" || row.UpperCI==null ? 0 : (+row.UpperCI - +row.Y);
+        const down = row.LowerCI==="" || row.LowerCI==null ? 0 : (+row.Y - +row.LowerCI);
+        errUp.push(up); errDown.push(down);
+        colors.push(PALETTE[sg]||"#4d4d4d");
       });
     });
+    traces.push({
+      type:"bar",
+      x, y,
+      marker:{color:colors},
+      error_y:{
+        type:"data", array:errUp, arrayminus:errDown,
+        visible:true, color:blackCI?"#000":undefined, thickness:1.5, width:4
+      },
+      hovertemplate:"%{x}<br>Y=%{y:.3f}<extra></extra>"
+    });
 
-    const trace = {
-      type:"bar", x, y,
-      error_y: { type:"data",
-        array: y.map((v,i)=> (state.data.find(d=>`${d.BigGroup} • ${d.Subgroup}`===x[i]).UpperCI - v)),
-        arrayminus: y.map((v,i)=> (v - state.data.find(d=>`${d.BigGroup} • ${d.Subgroup}`===x[i]).LowerCI)),
-        visible: true, color: blackCI? "#000": undefined, thickness:1.5, width:4 },
-      marker:{ color },
-      hovertemplate:"%{x}<br>Rate=%{y:.3f}<extra></extra>"
-    };
-
-    // Brackets (top) by bg
-    const shapes = [];
-    const annotations = [];
+    // Brackets (top) for big groups
+    const shapes=[]; const annotations=[];
     if(bracketPos==="Top of groups"){
       const xCats = [...new Set(x.map(v=>v.split(" • ")[0]))];
-      let xStartIdx = 0;
+      let idx = 0;
       xCats.forEach(bg=>{
-        const n = orderSG.filter(sg=> x.includes(`${bg} • ${sg}`)).length;
-        const xStart = x[xStartIdx], xEnd = x[xStartIdx+n-1];
+        const n = orderSG.filter(sg => x.includes(`${bg} • ${sg}`)).length;
+        if(n===0) return;
+        const xStart = x[idx], xEnd = x[idx+n-1];
         shapes.push(
           { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.08, y1:1.08, line:{color:"#000",width:1}},
           { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.08, y1:1.05, line:{color:"#000",width:1}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.08, y1:1.05, line:{color:"#000",width:1}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.08, y1:1.05, line:{color:"#000",width:1}}
         );
-        annotations.push({xref:"x",yref:"paper",x:(xStartIdx + (n-1)/2)|0, xanchor:"center",
-                          y:1.11, text:bg, showarrow:false, font:{size:12}});
-        xStartIdx += n;
+        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.11, text:bg, showarrow:false, font:{size:12}});
+        idx += n;
       });
     }
 
     const layout = {
       title, bargap: 0.25, bargroupgap: 0.05,
-      xaxis: { title:"Race/Ethnicity", ticks:"outside", automargin:true },
-      yaxis: { title: document.querySelector("#yLabelBar").value, gridcolor: showGrid? "rgba(0,0,0,.15)":"rgba(0,0,0,0)"},
+      xaxis: { title:"Subgroups", ticks:"outside", automargin:true },
+      yaxis: { title: document.querySelector("#yLabel").value,
+               gridcolor: showGrid? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
       margin: { t: 90, r: 10, l: 70, b: 150 },
       shapes, annotations
     };
-    Plotly.newPlot(container, [trace], layout, {displaylogo:false, responsive:true});
+    Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
 
   } else {
-    // Forest plot (dot with horizontal CI), y = subgroup repeated per big group
-    const traces = [];
+    // Forest-like dot plot but Y is the metric; categories on X
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
-
-    let yCats = [];
-    orderBG.forEach(bg=>{
-      orderSG.forEach(sg=>{
-        const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
-        if(!row) return;
-        yCats.push(`${bg} • ${sg}`);
-      });
-    });
-
+    const traces = [];
     orderSG.forEach(sg=>{
-      // one trace per subgroup color, scatter with error_x
-      const xs=[], ys=[], upper=[], lower=[];
+      const xs=[], ys=[], up=[], down=[];
       orderBG.forEach(bg=>{
         const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
         if(!row) return;
-        xs.push(row.RateRatio); ys.push(`${bg} • ${sg}`);
-        upper.push(row.UpperCI-row.RateRatio); lower.push(row.RateRatio-row.LowerCI);
+        xs.push(`${bg} • ${sg}`);
+        ys.push(+row.Y);
+        const u = row.UpperCI==="" || row.UpperCI==null ? 0 : (+row.UpperCI - +row.Y);
+        const d = row.LowerCI==="" || row.LowerCI==null ? 0 : (+row.Y - +row.LowerCI);
+        up.push(u); down.push(d);
       });
       if(xs.length){
         traces.push({
           type:"scatter", mode:"markers",
           x: xs, y: ys, name: sg,
           marker:{ color: PALETTE[sg]||"#4d4d4d", size:8 },
-          error_x: { type:"data", array: upper, arrayminus: lower, visible:true, color: document.querySelector("#blackCI").checked?"#000":(PALETTE[sg]||"#4d4d4d") }
+          error_y: { type:"data", array: up, arrayminus: down, visible:true,
+                     color: document.querySelector("#blackCI").checked?"#000":(PALETTE[sg]||"#4d4d4d") }
         });
       }
     });
 
-    const xtick = +document.querySelector("#xtick").value || 0.5;
-    const shapes = [];
-    const annotations = [];
+    const shapes=[]; const annotations=[];
     if(document.querySelector("#refLine").checked){
-      shapes.push({type:"line", x0:1, x1:1, y0:0, y1:1, xref:"x", yref:"paper", line:{color:"red", width:2, dash:"dash"}});
+      shapes.push({type:"line", x0:0, x1:1, y0:1, y1:1, xref:"paper", yref:"y", line:{color:"red", width:2, dash:"dash"}});
     }
-    if(document.querySelector("#bracketPos").value==="Right of groups"){
-      // build right-side brackets per big group
-      let idx=0;
+    // Brackets at top for big groups
+    if(document.querySelector("#bracketPos").value==="Top of groups"){
+      const xCats = [];
       orderBG.forEach(bg=>{
-        const n = orderSG.filter(sg=> yCats.includes(`${bg} • ${sg}`)).length;
-        if(!n) return;
-        const yStart = `${bg} • ${orderSG[0]}`;
-        const yEnd   = `${bg} • ${orderSG[n-1]}`;
-        // Plotly categorical y: use paper coordinates + annotations per mid
-        annotations.push({xref:"paper", yref:"y", x:1.03, y:yStart, text:"", showarrow:false});
+        orderSG.forEach(sg=>{
+          const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
+          if(row) xCats.push(`${bg} • ${sg}`);
+        });
+      });
+      let idx = 0;
+      orderBG.forEach(bg=>{
+        const n = orderSG.filter(sg => xCats.includes(`${bg} • ${sg}`)).length;
+        if(n===0) return;
+        const xStart = xCats[idx], xEnd = xCats[idx+n-1];
         shapes.push(
-          {type:"line", xref:"paper", yref:"y", x0:1.02, x1:1.02, y0:yStart, y1:yEnd, line:{color:"#000",width:1}},
-          {type:"line", xref:"paper", yref:"y", x0:1.02, x1:1.00, y0:yStart, y1:yStart, line:{color:"#000",width:1}},
-          {type:"line", xref:"paper", yref:"y", x0:1.02, x1:1.00, y0:yEnd, y1:yEnd, line:{color:"#000",width:1}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.08, y1:1.08, line:{color:"#000",width:1}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.08, y1:1.05, line:{color:"#000",width:1}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.08, y1:1.05, line:{color:"#000",width:1}}
         );
-        annotations.push({xref:"paper", yref:"y", x:1.08, y:yCats[idx+Math.floor((n-1)/2)], text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:xCats[Math.floor(idx + (n-1)/2)], y:1.11, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
 
+    const ytick = +document.querySelector("#ytick").value || 0.5;
     const layout = {
       title,
-      xaxis:{ title: document.querySelector("#xLabelForest").value,
-              tick0:0, dtick: xtick, gridcolor: document.querySelector("#showGrid").checked? "rgba(0,0,0,.15)":"rgba(0,0,0,0)"},
-      yaxis:{ categoryorder:"array", categoryarray: yCats, automargin:true },
-      margin:{ t: 80, r: 140, l: 20, b: 70 },
+      xaxis:{ title:"Subgroups", automargin:true },
+      yaxis:{ title: document.querySelector("#yLabel").value,
+              dtick: ytick,
+              gridcolor: document.querySelector("#showGrid").checked? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
+      margin:{ t: 90, r: 20, l: 70, b: 150 },
       shapes, annotations, legend:{orientation:"h", y:-0.15}
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
@@ -413,17 +371,15 @@ document.querySelector("#titleInput").oninput = ()=> draw();
 document.querySelector("#nBig").oninput = (e)=>{
   const n = Math.max(1, Math.min(10, +e.target.value||1));
   state.nBig = n;
-  // keep existing names or fill new
   while(state.bigGroups.length < n) state.bigGroups.push(`Group ${state.bigGroups.length+1}`);
   state.bigGroups = state.bigGroups.slice(0,n);
   buildBigGroupInputs(); makeRandomData(); renderTable(); draw();
 };
 document.querySelector("#bigGroupInputs").addEventListener("input", ()=> draw());
-document.querySelector("#yLabelBar").oninput = ()=> draw();
-document.querySelector("#xLabelForest").oninput = ()=> draw();
+document.querySelector("#yLabel").oninput = ()=> draw();
 document.querySelector("#showGrid").onchange = ()=> draw();
 document.querySelector("#refLine").onchange = ()=> draw();
-document.querySelector("#xtick").oninput = ()=> draw();
+document.querySelector("#ytick").oninput = ()=> draw();
 document.querySelector("#blackCI").onchange = ()=> draw();
 document.querySelector("#bracketPos").onchange = ()=> draw();
 
@@ -435,10 +391,11 @@ document.querySelector("#export").onclick = ()=>{
   Plotly.toImage(document.querySelector("#plot"), {format:"png", width:1200, height:720})
     .then(dataUrl=>{
       const a = document.createElement("a");
-      a.href = dataUrl; a.download = "ptcl_chart.png"; a.click();
+      a.href = dataUrl; a.download = "chart.png"; a.click();
     });
 };
 
+/* Chat tweaks */
 document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
   if(e.key==="Enter"){
     const s=e.target.value.trim(); e.target.value="";
@@ -450,7 +407,7 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
       if(k==="type"){ document.querySelector("#chartType").value = (v==="dot"?"Dot (forest/CI)":"Bar (incidence)"); }
       if(k==="brackets"){ document.querySelector("#bracketPos").value = (v==="right"?"Right of groups":"Top of groups"); }
       if(k==="ref"){ document.querySelector("#refLine").checked = !(v==="false"||v==="0"||v==="no"); }
-      if(k==="xtick"){ document.querySelector("#xtick").value = v; }
+      if(k==="ytick"){ document.querySelector("#ytick").value = v; }
     });
     draw();
   }
@@ -459,7 +416,24 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
 /* ---------- Boot ---------- */
 function boot(){
   buildBigGroupInputs();
-  buildSubgroupChips();
+  // subgroup chips from fruits/vegetables set
+  const box = document.querySelector("#subgroupChips");
+  DEFAULT_SECOND.forEach(label=>{
+    const chip = document.createElement("span");
+    chip.className = "chip" + (state.subgroups.includes(label) ? " active":"");
+    chip.textContent = label;
+    chip.onclick = ()=>{
+      if(state.subgroups.includes(label)){
+        state.subgroups = state.subgroups.filter(x=>x!==label);
+        chip.classList.remove("active");
+      } else {
+        state.subgroups.push(label);
+        chip.classList.add("active");
+      }
+      makeRandomData(); renderTable(); draw();
+    };
+    box.appendChild(chip);
+  });
   buildLegend();
   makeRandomData();
   renderTable();
