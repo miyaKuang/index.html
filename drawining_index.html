@@ -84,11 +84,27 @@
               </select>
             </label>
           </div>
+          <div class="row">
+            <label>
+              Top bracket spacing
+              <input id="bracketSpace" type="number" step="0.01" value="0.16"/>
+            </label>
+            <label>
+              <input type="checkbox" id="clusterMode"/> Cluster big groups (bars)
+            </label>
+          </div>
+          <div class="row">
+            <label>
+              Cluster gap (empty bars)
+              <input id="clusterGap" type="number" min="0" max="5" step="1" value="1"/>
+            </label>
+            <span></span>
+          </div>
         </details>
 
         <label>Chat tweaks</label>
-        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | ytick=0.25 | subgap=0.35" />
-        <small>Press Enter to apply. Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>ytick</code>, <code>subgap</code></small>
+        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | ytick=0.25 | subgap=0.35 | top=0.18 | cluster=true | cg=2" />
+        <small>Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>ytick</code>, <code>subgap</code>, <code>top</code>=bracket spacing, <code>cluster</code>=true|false, <code>cg</code>=cluster gap</small>
 
         <hr/>
         <button id="randomize" class="secondary">Randomize Demo Data</button>
@@ -118,7 +134,7 @@
   </div>
 
   <footer>
-    <small>Single-file demo. Edit data, toggle CI, set subgroup gaps, and export PNG.</small>
+    <small>Single-file demo. Edit data, toggle CI, set subgroup/cluster gaps, and export PNG.</small>
   </footer>
 </main>
 
@@ -134,9 +150,9 @@ const PALETTE = {
 };
 let state = {
   chartType: "Bar (incidence)",
-  title: document.querySelector("#titleInput").value,
-  nBig: +document.querySelector("#nBig").value,
-  bigGroups: ["Category A","Category B","Category C"].slice(0, +document.querySelector("#nBig").value),
+  title: "",
+  nBig: 3,
+  bigGroups: ["Category A","Category B","Category C"],
   subgroups: [...DEFAULT_SECOND.slice(0,6)],
   showGrid: true,
   refLine: true,
@@ -145,6 +161,9 @@ let state = {
   bracketPos: "Top of groups",
   showCI: true,
   subgap: 0.25,
+  bracketSpace: 0.16,   // amount above plot (paper units)
+  clusterMode: false,
+  clusterGap: 1,        // number of empty spacer bars between big groups
   data: []
 };
 
@@ -260,20 +279,43 @@ function renderTable(){
 }
 
 /* ---------- Drawing ---------- */
+function makeBracketsForBars(x, orderBG, orderSG, yTop){
+  const shapes=[]; const annotations=[];
+  let idx = 0;
+  orderBG.forEach(bg=>{
+    const n = orderSG.filter(sg => x.includes(`${bg} • ${sg}`)).length;
+    if(n===0) return;
+    const xStart = x[idx], xEnd = x[idx+n-1];
+    shapes.push(
+      { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:yTop, y1:yTop, line:{color:"#000",width:3}},
+      { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:yTop, y1:yTop-0.06, line:{color:"#000",width:3}},
+      { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:yTop, y1:yTop-0.06, line:{color:"#000",width:3}}
+    );
+    annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:yTop+0.03, text:bg, showarrow:false, font:{size:12}});
+    idx += n;
+  });
+  return {shapes, annotations};
+}
+
 function draw(){
   const container = document.querySelector("#plot");
   const type = document.querySelector("#chartType").value;
-  const blackCI = document.querySelector("#blackCI").checked;
   const showGrid = document.querySelector("#showGrid").checked;
   const showCI = document.querySelector("#showCI").checked;
+  const blackCI = document.querySelector("#blackCI").checked;
   const subgap = Math.min(0.9, Math.max(0, +document.querySelector("#subgap").value || 0.25));
+  const bracketSpace = Math.max(0.10, +document.querySelector("#bracketSpace").value || 0.16); // paper coordinates above 1.0
+  const clusterMode = document.querySelector("#clusterMode").checked;
+  const clusterGap = Math.max(0, Math.min(5, +document.querySelector("#clusterGap").value || 1));
+  const titleText = document.querySelector("#titleInput").value;
 
   if(type==="Bar (incidence)"){
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
 
+    // Build bars (with optional spacers between groups if clusterMode)
     const x = [], y = [], errUp=[], errDown=[], colors=[], ticktext=[];
-    orderBG.forEach(bg=>{
+    orderBG.forEach((bg, gi)=>{
       orderSG.forEach(sg=>{
         const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
         if(!row) return;
@@ -284,8 +326,16 @@ function draw(){
         const down = row.LowerCI==="" || row.LowerCI==null ? 0 : (+row.Y - +row.LowerCI);
         errUp.push(up); errDown.push(down);
         colors.push(PALETTE[sg]||"#4d4d4d");
-        ticktext.push(sg); // only subgroup names on axis
+        ticktext.push(sg);
       });
+      if(clusterMode && gi < orderBG.length-1){
+        // Insert adjustable number of invisible spacer bars
+        for(let s=0; s<clusterGap; s++){
+          const gapKey = `__gap_${gi}_${s}`;
+          x.push(gapKey); y.push(0); errUp.push(0); errDown.push(0);
+          colors.push("rgba(0,0,0,0)"); ticktext.push("");
+        }
+      }
     });
 
     const traces = [{
@@ -301,26 +351,16 @@ function draw(){
       hovertemplate:"%{x}<br>Y=%{y:.3f}<extra></extra>"
     }];
 
-    // brackets (thicker & higher)
-    const shapes=[]; const annotations=[];
+    // Top brackets (avoid title overlap via adjustable spacing)
+    let shapes=[], annotations=[];
     if(document.querySelector("#bracketPos").value==="Top of groups"){
-      let idx = 0;
-      orderBG.forEach(bg=>{
-        const n = orderSG.filter(sg => x.includes(`${bg} • ${sg}`)).length;
-        if(n===0) return;
-        const xStart = x[idx], xEnd = x[idx+n-1];
-        shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.14, y1:1.14, line:{color:"#000",width:3}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.14, y1:1.08, line:{color:"#000",width:3}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.14, y1:1.08, line:{color:"#000",width:3}}
-        );
-        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.18, text:bg, showarrow:false, font:{size:12}});
-        idx += n;
-      });
+      const pack = makeBracketsForBars(x, orderBG, orderSG, 1.0 + bracketSpace);
+      shapes = pack.shapes; annotations = pack.annotations;
     }
 
+    const topMargin = 80 + Math.round(600 * (bracketSpace - 0.10)); // lift title further as spacing increases
     const layout = {
-      title: document.querySelector("#titleInput").value,
+      title: { text: titleText, y: 0.99 },
       bargap: subgap,
       bargroupgap: 0.05,
       xaxis: {
@@ -331,17 +371,18 @@ function draw(){
         title: document.querySelector("#yLabel").value,
         gridcolor: showGrid? "rgba(0,0,0,.15)" : "rgba(0,0,0,0)"
       },
-      margin: { t: 110, r: 10, l: 70, b: 150 },
+      margin: { t: topMargin, r: 10, l: 70, b: 150 },
       shapes, annotations
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
 
   } else {
+    // Forest / dot
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
     const traces = [];
 
-    // flat list for custom ticks
+    // flat list for custom ticks (only subgroup names on axis)
     const xcats = [];
     orderBG.forEach(bg=>{
       orderSG.forEach(sg=>{
@@ -373,6 +414,7 @@ function draw(){
       }
     });
 
+    // Brackets directly above each big group, using same top spacing
     const shapes=[]; const annotations=[];
     if(document.querySelector("#refLine").checked){
       shapes.push({type:"line", x0:0, x1:1, y0:1, y1:1, xref:"paper", yref:"y", line:{color:"red", width:2, dash:"dash"}});
@@ -383,19 +425,21 @@ function draw(){
         const n = orderSG.filter(sg => xcats.find(c=>c.cat===`${bg} • ${sg}`)).length;
         if(n===0) return;
         const xStart = xcats[idx].cat, xEnd = xcats[idx+n-1].cat;
+        const yTop = 1.0 + bracketSpace;
         shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.14, y1:1.14, line:{color:"#000",width:3}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.14, y1:1.08, line:{color:"#000",width:3}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.14, y1:1.08, line:{color:"#000",width:3}}
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:yTop, y1:yTop, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:yTop, y1:yTop-0.06, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:yTop, y1:yTop-0.06, line:{color:"#000",width:3}}
         );
-        annotations.push({xref:"x", yref:"paper", x:xcats[Math.floor(idx + (n-1)/2)].cat, y:1.18, text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:xcats[Math.floor(idx + (n-1)/2)].cat, y:yTop+0.03, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
 
     const ytick = +document.querySelector("#ytick").value || 0.5;
+    const topMargin = 80 + Math.round(600 * (bracketSpace - 0.10));
     const layout = {
-      title: document.querySelector("#titleInput").value,
+      title:{ text: titleText, y: 0.99 },
       xaxis:{
         title:"", automargin:true,
         tickmode:"array",
@@ -404,8 +448,8 @@ function draw(){
       },
       yaxis:{ title: document.querySelector("#yLabel").value,
               dtick: ytick,
-              gridcolor: document.querySelector("#showGrid").checked? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
-      margin:{ t: 110, r: 20, l: 70, b: 150 },
+              gridcolor: showGrid? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
+      margin:{ t: topMargin, r: 20, l: 70, b: 150 },
       shapes, annotations, legend:{orientation:"h", y:-0.15}
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
@@ -413,9 +457,7 @@ function draw(){
 }
 
 /* ---------- Events ---------- */
-document.querySelector("#chartType").onchange = ()=>{
-  makeRandomData(); renderTable(); draw();
-};
+document.querySelector("#chartType").onchange = ()=>{ makeRandomData(); renderTable(); draw(); };
 document.querySelector("#titleInput").oninput = ()=> draw();
 document.querySelector("#nBig").oninput = (e)=>{
   const n = Math.max(1, Math.min(10, +e.target.value||1));
@@ -433,10 +475,11 @@ document.querySelector("#blackCI").onchange = ()=> draw();
 document.querySelector("#bracketPos").onchange = ()=> draw();
 document.querySelector("#showCI").onchange = ()=> draw();
 document.querySelector("#subgap").oninput = ()=> draw();
+document.querySelector("#bracketSpace").oninput = ()=> draw();
+document.querySelector("#clusterMode").onchange = ()=> draw();
+document.querySelector("#clusterGap").oninput = ()=> draw();
 
-document.querySelector("#randomize").onclick = ()=>{
-  makeRandomData(); renderTable(); draw();
-};
+document.querySelector("#randomize").onclick = ()=>{ makeRandomData(); renderTable(); draw(); };
 document.querySelector("#draw").onclick = ()=> draw();
 document.querySelector("#export").onclick = ()=>{
   Plotly.toImage(document.querySelector("#plot"), {format:"png", width:1200, height:720})
@@ -460,6 +503,9 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
       if(k==="ref"){ document.querySelector("#refLine").checked = !(v==="false"||v==="0"||v==="no"); }
       if(k==="ytick"){ document.querySelector("#ytick").value = v; }
       if(k==="subgap"){ document.querySelector("#subgap").value = v; }
+      if(k==="top"){ document.querySelector("#bracketSpace").value = v; }
+      if(k==="cluster"){ document.querySelector("#clusterMode").checked = (v==="true"||v==="1"||v==="yes"); }
+      if(k==="cg"){ document.querySelector("#clusterGap").value = v; }
     });
     draw();
   }
@@ -467,6 +513,13 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
 
 /* ---------- Boot ---------- */
 function boot(){
+  // hydrate state from initial inputs
+  state.title = document.querySelector("#titleInput").value;
+  state.nBig = +document.querySelector("#nBig").value;
+  state.bracketSpace = +document.querySelector("#bracketSpace").value;
+  state.clusterMode = document.querySelector("#clusterMode").checked;
+  state.clusterGap = +document.querySelector("#clusterGap").value;
+
   buildBigGroupInputs();
   buildSubgroupChips();
   buildLegend();
