@@ -243,9 +243,8 @@ function renderTable(){
         // Auto-rebuild chips if Subgroup column changed
         if(k==="Subgroup"){
           const latest = uniqueSubgroupsFromData();
-          // keep all current selections if still present; otherwise select all
           const was = new Set(state.subgroups);
-          state.subgroups = latest.filter(s => was.has(s)) ;
+          state.subgroups = latest.filter(s => was.has(s));
           if(state.subgroups.length===0) state.subgroups = latest;
           chipsFromList(latest);
           buildLegend();
@@ -264,78 +263,93 @@ function renderTable(){
 function draw(){
   const container = document.querySelector("#plot");
   const type = document.querySelector("#chartType").value;
-  const title = document.querySelector("#titleInput").value;
   const blackCI = document.querySelector("#blackCI").checked;
-  const bracketPos = document.querySelector("#bracketPos").value;
   const showGrid = document.querySelector("#showGrid").checked;
   const showCI = document.querySelector("#showCI").checked;
   const subgap = Math.min(0.9, Math.max(0, +document.querySelector("#subgap").value || 0.25));
 
   if(type==="Bar (incidence)"){
-    // Categories on x; Y on y; CI vertical and optional
-    const traces = [];
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
-    const x = [], y = [], errUp=[], errDown=[], colors=[];
+
+    const x = [], y = [], errUp=[], errDown=[], colors=[], ticktext=[];
     orderBG.forEach(bg=>{
       orderSG.forEach(sg=>{
         const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
         if(!row) return;
-        x.push(`${bg} • ${sg}`);
+        const cat = `${bg} • ${sg}`;
+        x.push(cat);
         y.push(+row.Y);
         const up = row.UpperCI==="" || row.UpperCI==null ? 0 : (+row.UpperCI - +row.Y);
         const down = row.LowerCI==="" || row.LowerCI==null ? 0 : (+row.Y - +row.LowerCI);
         errUp.push(up); errDown.push(down);
         colors.push(PALETTE[sg]||"#4d4d4d");
+        ticktext.push(sg); // only subgroup names on axis
       });
     });
-    traces.push({
+
+    const traces = [{
       type:"bar",
       x, y,
       marker:{color:colors},
       error_y:{
         type:"data", array:errUp, arrayminus:errDown,
-        visible: showCI, color:blackCI?"#000":undefined, thickness:1.5, width:4
+        visible: showCI,
+        color: blackCI ? "#000" : undefined,
+        thickness:1.5, width:4
       },
       hovertemplate:"%{x}<br>Y=%{y:.3f}<extra></extra>"
-    });
+    }];
 
-    // Brackets (top) for big groups (thicker & higher)
+    // brackets (thicker & higher)
     const shapes=[]; const annotations=[];
-    if(bracketPos==="Top of groups"){
-      const xCats = [...new Set(x.map(v=>v.split(" • ")[0]))];
+    if(document.querySelector("#bracketPos").value==="Top of groups"){
       let idx = 0;
-      xCats.forEach(bg=>{
+      orderBG.forEach(bg=>{
         const n = orderSG.filter(sg => x.includes(`${bg} • ${sg}`)).length;
         if(n===0) return;
         const xStart = x[idx], xEnd = x[idx+n-1];
         shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.12, y1:1.12, line:{color:"#000",width:2}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.12, y1:1.07, line:{color:"#000",width:2}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.12, y1:1.07, line:{color:"#000",width:2}}
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.14, y1:1.14, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.14, y1:1.08, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.14, y1:1.08, line:{color:"#000",width:3}}
         );
-        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.15, text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.18, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
 
     const layout = {
-      title,
-      bargap: subgap,          /* user-controlled spacing between bars */
+      title: document.querySelector("#titleInput").value,
+      bargap: subgap,
       bargroupgap: 0.05,
-      xaxis: { title:"", ticks:"outside", automargin:true }, /* no x-axis title */
-      yaxis: { title: document.querySelector("#yLabel").value,
-               gridcolor: showGrid? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
+      xaxis: {
+        title: "", ticks:"outside", automargin:true,
+        tickmode: "array", tickvals: x, ticktext: ticktext
+      },
+      yaxis: {
+        title: document.querySelector("#yLabel").value,
+        gridcolor: showGrid? "rgba(0,0,0,.15)" : "rgba(0,0,0,0)"
+      },
       margin: { t: 110, r: 10, l: 70, b: 150 },
       shapes, annotations
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
 
   } else {
-    // Forest-like dot plot but Y is the metric; categories on X
     const orderBG = [...state.bigGroups];
     const orderSG = [...state.subgroups];
     const traces = [];
+
+    // flat list for custom ticks
+    const xcats = [];
+    orderBG.forEach(bg=>{
+      orderSG.forEach(sg=>{
+        const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
+        if(row) xcats.push({cat:`${bg} • ${sg}`, sg});
+      });
+    });
+
     orderSG.forEach(sg=>{
       const xs=[], ys=[], up=[], down=[];
       orderBG.forEach(bg=>{
@@ -353,8 +367,8 @@ function draw(){
           x: xs, y: ys, name: sg,
           marker:{ color: PALETTE[sg]||"#4d4d4d", size:8 },
           error_y: { type:"data", array: up, arrayminus: down,
-                     visible: showCI,
-                     color: document.querySelector("#blackCI").checked?"#000":(PALETTE[sg]||"#4d4d4d") }
+                     visible: document.querySelector("#showCI").checked,
+                     color: document.querySelector("#blackCI").checked ? "#000" : (PALETTE[sg]||"#4d4d4d") }
         });
       }
     });
@@ -364,32 +378,30 @@ function draw(){
       shapes.push({type:"line", x0:0, x1:1, y0:1, y1:1, xref:"paper", yref:"y", line:{color:"red", width:2, dash:"dash"}});
     }
     if(document.querySelector("#bracketPos").value==="Top of groups"){
-      const xCats = [];
-      orderBG.forEach(bg=>{
-        orderSG.forEach(sg=>{
-          const row = state.data.find(d=>d.BigGroup===bg && d.Subgroup===sg);
-          if(row) xCats.push(`${bg} • ${sg}`);
-        });
-      });
       let idx = 0;
       orderBG.forEach(bg=>{
-        const n = orderSG.filter(sg => xCats.includes(`${bg} • ${sg}`)).length;
+        const n = orderSG.filter(sg => xcats.find(c=>c.cat===`${bg} • ${sg}`)).length;
         if(n===0) return;
-        const xStart = xCats[idx], xEnd = xCats[idx+n-1];
+        const xStart = xcats[idx].cat, xEnd = xcats[idx+n-1].cat;
         shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.12, y1:1.12, line:{color:"#000",width:2}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.12, y1:1.07, line:{color:"#000",width:2}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.12, y1:1.07, line:{color:"#000",width:2}}
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.14, y1:1.14, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.14, y1:1.08, line:{color:"#000",width:3}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.14, y1:1.08, line:{color:"#000",width:3}}
         );
-        annotations.push({xref:"x", yref:"paper", x:xCats[Math.floor(idx + (n-1)/2)], y:1.15, text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:xcats[Math.floor(idx + (n-1)/2)].cat, y:1.18, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
 
     const ytick = +document.querySelector("#ytick").value || 0.5;
     const layout = {
-      title,
-      xaxis:{ title:"", automargin:true },  /* no x-axis title */
+      title: document.querySelector("#titleInput").value,
+      xaxis:{
+        title:"", automargin:true,
+        tickmode:"array",
+        tickvals: xcats.map(c=>c.cat),
+        ticktext: xcats.map(c=>c.sg)
+      },
       yaxis:{ title: document.querySelector("#yLabel").value,
               dtick: ytick,
               gridcolor: document.querySelector("#showGrid").checked? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
