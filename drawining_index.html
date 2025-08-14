@@ -68,6 +68,13 @@
             <label><input type="checkbox" id="refLine" checked/> Forest: show y=1 reference</label>
           </div>
           <div class="row">
+            <label><input type="checkbox" id="showCI" checked/> Show confidence intervals</label>
+            <label>
+              Subgroup gap (bars)
+              <input id="subgap" type="number" step="0.01" min="0" max="0.9" value="0.25"/>
+            </label>
+          </div>
+          <div class="row">
             <label><input type="checkbox" id="blackCI" checked/> CI in black</label>
             <label>
               Bracket position
@@ -80,8 +87,8 @@
         </details>
 
         <label>Chat tweaks</label>
-        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | ytick=0.25" />
-        <small>Press Enter to apply. Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>ytick</code>=0.5</small>
+        <input id="chatBox" placeholder="e.g., title=My Plot | type=dot | brackets=right | ref=false | ytick=0.25 | subgap=0.35" />
+        <small>Press Enter to apply. Keys: <code>title</code>, <code>type</code>=bar|dot, <code>brackets</code>=top|right, <code>ref</code>=true|false, <code>ytick</code>, <code>subgap</code></small>
 
         <hr/>
         <button id="randomize" class="secondary">Randomize Demo Data</button>
@@ -111,7 +118,7 @@
   </div>
 
   <footer>
-    <small>Single-file demo. Edit data, tweak with chat, and export PNG.</small>
+    <small>Single-file demo. Edit data, toggle CI, set subgroup gaps, and export PNG.</small>
   </footer>
 </main>
 
@@ -136,6 +143,8 @@ let state = {
   ytick: 0.5,
   blackCI: true,
   bracketPos: "Top of groups",
+  showCI: true,
+  subgap: 0.25,
   data: []
 };
 
@@ -150,10 +159,11 @@ function buildBigGroupInputs(){
     wrap.appendChild(inp);
   }
 }
-function buildSubgroupChips(){
+
+function chipsFromList(list){
   const box = document.querySelector("#subgroupChips");
   box.innerHTML = "";
-  DEFAULT_SECOND.forEach(label=>{
+  list.forEach(label=>{
     const chip = document.createElement("span");
     chip.className = "chip" + (state.subgroups.includes(label) ? " active":"");
     chip.textContent = label;
@@ -170,6 +180,11 @@ function buildSubgroupChips(){
     box.appendChild(chip);
   });
 }
+
+function buildSubgroupChips(){
+  chipsFromList(DEFAULT_SECOND);
+}
+
 function buildLegend(){
   const el = document.querySelector("#legendSwatches");
   el.innerHTML = "<strong>Subgroup colors:</strong> ";
@@ -201,6 +216,11 @@ function makeRandomData(){
   state.data = rows;
 }
 
+function uniqueSubgroupsFromData(){
+  const set = new Set(state.data.map(d=>d.Subgroup).filter(Boolean));
+  return [...set];
+}
+
 function renderTable(){
   const tbl = document.querySelector("#dataTable");
   tbl.innerHTML = "";
@@ -218,7 +238,20 @@ function renderTable(){
       const td = document.createElement("td");
       const inp = document.createElement("input");
       inp.value = row[k];
-      inp.onchange = ()=>{ state.data[ridx][k] = (k==="BigGroup"||k==="Subgroup") ? inp.value : (inp.value===""? "": +inp.value); };
+      inp.onchange = ()=>{
+        state.data[ridx][k] = (k==="BigGroup"||k==="Subgroup") ? inp.value : (inp.value===""? "": +inp.value);
+        // Auto-rebuild chips if Subgroup column changed
+        if(k==="Subgroup"){
+          const latest = uniqueSubgroupsFromData();
+          // keep all current selections if still present; otherwise select all
+          const was = new Set(state.subgroups);
+          state.subgroups = latest.filter(s => was.has(s)) ;
+          if(state.subgroups.length===0) state.subgroups = latest;
+          chipsFromList(latest);
+          buildLegend();
+        }
+        draw();
+      };
       td.appendChild(inp);
       tr.appendChild(td);
     });
@@ -235,6 +268,8 @@ function draw(){
   const blackCI = document.querySelector("#blackCI").checked;
   const bracketPos = document.querySelector("#bracketPos").value;
   const showGrid = document.querySelector("#showGrid").checked;
+  const showCI = document.querySelector("#showCI").checked;
+  const subgap = Math.min(0.9, Math.max(0, +document.querySelector("#subgap").value || 0.25));
 
   if(type==="Bar (incidence)"){
     // Categories on x; Y on y; CI vertical and optional
@@ -260,12 +295,12 @@ function draw(){
       marker:{color:colors},
       error_y:{
         type:"data", array:errUp, arrayminus:errDown,
-        visible:true, color:blackCI?"#000":undefined, thickness:1.5, width:4
+        visible: showCI, color:blackCI?"#000":undefined, thickness:1.5, width:4
       },
       hovertemplate:"%{x}<br>Y=%{y:.3f}<extra></extra>"
     });
 
-    // Brackets (top) for big groups
+    // Brackets (top) for big groups (thicker & higher)
     const shapes=[]; const annotations=[];
     if(bracketPos==="Top of groups"){
       const xCats = [...new Set(x.map(v=>v.split(" • ")[0]))];
@@ -275,21 +310,23 @@ function draw(){
         if(n===0) return;
         const xStart = x[idx], xEnd = x[idx+n-1];
         shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.08, y1:1.08, line:{color:"#000",width:1}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.08, y1:1.05, line:{color:"#000",width:1}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.08, y1:1.05, line:{color:"#000",width:1}}
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.12, y1:1.12, line:{color:"#000",width:2}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.12, y1:1.07, line:{color:"#000",width:2}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.12, y1:1.07, line:{color:"#000",width:2}}
         );
-        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.11, text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:x[Math.floor(idx + (n-1)/2)], y:1.15, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
 
     const layout = {
-      title, bargap: 0.25, bargroupgap: 0.05,
-      xaxis: { title:"Subgroups", ticks:"outside", automargin:true },
+      title,
+      bargap: subgap,          /* user-controlled spacing between bars */
+      bargroupgap: 0.05,
+      xaxis: { title:"", ticks:"outside", automargin:true }, /* no x-axis title */
       yaxis: { title: document.querySelector("#yLabel").value,
                gridcolor: showGrid? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
-      margin: { t: 90, r: 10, l: 70, b: 150 },
+      margin: { t: 110, r: 10, l: 70, b: 150 },
       shapes, annotations
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
@@ -315,7 +352,8 @@ function draw(){
           type:"scatter", mode:"markers",
           x: xs, y: ys, name: sg,
           marker:{ color: PALETTE[sg]||"#4d4d4d", size:8 },
-          error_y: { type:"data", array: up, arrayminus: down, visible:true,
+          error_y: { type:"data", array: up, arrayminus: down,
+                     visible: showCI,
                      color: document.querySelector("#blackCI").checked?"#000":(PALETTE[sg]||"#4d4d4d") }
         });
       }
@@ -325,7 +363,6 @@ function draw(){
     if(document.querySelector("#refLine").checked){
       shapes.push({type:"line", x0:0, x1:1, y0:1, y1:1, xref:"paper", yref:"y", line:{color:"red", width:2, dash:"dash"}});
     }
-    // Brackets at top for big groups
     if(document.querySelector("#bracketPos").value==="Top of groups"){
       const xCats = [];
       orderBG.forEach(bg=>{
@@ -340,11 +377,11 @@ function draw(){
         if(n===0) return;
         const xStart = xCats[idx], xEnd = xCats[idx+n-1];
         shapes.push(
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.08, y1:1.08, line:{color:"#000",width:1}},
-          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.08, y1:1.05, line:{color:"#000",width:1}},
-          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.08, y1:1.05, line:{color:"#000",width:1}}
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xEnd, y0:1.12, y1:1.12, line:{color:"#000",width:2}},
+          { type:"line", xref:"x", yref:"paper", x0:xStart, x1:xStart, y0:1.12, y1:1.07, line:{color:"#000",width:2}},
+          { type:"line", xref:"x", yref:"paper", x0:xEnd, x1:xEnd, y0:1.12, y1:1.07, line:{color:"#000",width:2}}
         );
-        annotations.push({xref:"x", yref:"paper", x:xCats[Math.floor(idx + (n-1)/2)], y:1.11, text:bg, showarrow:false, font:{size:12}});
+        annotations.push({xref:"x", yref:"paper", x:xCats[Math.floor(idx + (n-1)/2)], y:1.15, text:bg, showarrow:false, font:{size:12}});
         idx += n;
       });
     }
@@ -352,11 +389,11 @@ function draw(){
     const ytick = +document.querySelector("#ytick").value || 0.5;
     const layout = {
       title,
-      xaxis:{ title:"Subgroups", automargin:true },
+      xaxis:{ title:"", automargin:true },  /* no x-axis title */
       yaxis:{ title: document.querySelector("#yLabel").value,
               dtick: ytick,
               gridcolor: document.querySelector("#showGrid").checked? "rgba(0,0,0,.15)":"rgba(0,0,0,0)" },
-      margin:{ t: 90, r: 20, l: 70, b: 150 },
+      margin:{ t: 110, r: 20, l: 70, b: 150 },
       shapes, annotations, legend:{orientation:"h", y:-0.15}
     };
     Plotly.newPlot(container, traces, layout, {displaylogo:false, responsive:true});
@@ -382,6 +419,8 @@ document.querySelector("#refLine").onchange = ()=> draw();
 document.querySelector("#ytick").oninput = ()=> draw();
 document.querySelector("#blackCI").onchange = ()=> draw();
 document.querySelector("#bracketPos").onchange = ()=> draw();
+document.querySelector("#showCI").onchange = ()=> draw();
+document.querySelector("#subgap").oninput = ()=> draw();
 
 document.querySelector("#randomize").onclick = ()=>{
   makeRandomData(); renderTable(); draw();
@@ -408,6 +447,7 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
       if(k==="brackets"){ document.querySelector("#bracketPos").value = (v==="right"?"Right of groups":"Top of groups"); }
       if(k==="ref"){ document.querySelector("#refLine").checked = !(v==="false"||v==="0"||v==="no"); }
       if(k==="ytick"){ document.querySelector("#ytick").value = v; }
+      if(k==="subgap"){ document.querySelector("#subgap").value = v; }
     });
     draw();
   }
@@ -416,24 +456,7 @@ document.querySelector("#chatBox").addEventListener("keydown", (e)=>{
 /* ---------- Boot ---------- */
 function boot(){
   buildBigGroupInputs();
-  // subgroup chips from fruits/vegetables set
-  const box = document.querySelector("#subgroupChips");
-  DEFAULT_SECOND.forEach(label=>{
-    const chip = document.createElement("span");
-    chip.className = "chip" + (state.subgroups.includes(label) ? " active":"");
-    chip.textContent = label;
-    chip.onclick = ()=>{
-      if(state.subgroups.includes(label)){
-        state.subgroups = state.subgroups.filter(x=>x!==label);
-        chip.classList.remove("active");
-      } else {
-        state.subgroups.push(label);
-        chip.classList.add("active");
-      }
-      makeRandomData(); renderTable(); draw();
-    };
-    box.appendChild(chip);
-  });
+  buildSubgroupChips();
   buildLegend();
   makeRandomData();
   renderTable();
